@@ -5,6 +5,8 @@
 # ========  =========  ========================================================
 # 6/11/21   Paudel     Initial version,
 # ******************************************************************************
+import os
+
 from tqdm import tqdm
 
 from sklearn.metrics import confusion_matrix, log_loss, classification_report
@@ -24,26 +26,81 @@ def aggregate_neighbors(node_emb, node_list, u, n_u):
     H = 1 / (1 + len(CNu)) * np.add(Cu, sum(Cn for Cn in CNu))
     return np.array(H)
 
-def predict_prob(w, X):
-    return softmax(np.dot(X, w.T))
-    # return softmax(np.dot(X, w) + b)
 
 def calculate_edge_probability(w, node_emb, node_list, G):
-    edge_scores = []
-    # edges = []
-    for u, v, data in G.edges(data=True):
-        if 1==1:#(u, v, data['anom']) not in edges:
-            Nu = [n for n in G.neighbors(u)]
-            Hu = aggregate_neighbors(node_emb, node_list, u, Nu)
-            Hu = np.reshape(Hu, (1, Hu.shape[0]))
-            Pv = predict_prob(w, Hu)
+    """
+    Vectorized version:
+    - Precomputes a node-to-index mapping.
+    - Caches aggregated embeddings for every node in G.
+    - Builds arrays for the source and target aggregated embeddings for all edges.
+    - Computes the softmax predictions in batch.
+    - Computes an edge score for each edge.
+    """
+    # Precompute node2idx for fast lookup
+    node2idx = {str(n): i for i, n in enumerate(node_list)}
 
-            Nv = [n for n in G.neighbors(v)]
-            Hv = aggregate_neighbors(node_emb, node_list, v, Nv)
-            Hv = np.reshape(Hv, (1, Hv.shape[0]))
-            Pu = predict_prob(w, Hv)
-            score = ((1-Pv[0, v]) + (1-Pu[0, u]))/2
-            edge_scores.append([u, v, score, data['snapshot'], data['time'], data['anom']])
+    # Cache aggregated embeddings for each node in G
+    agg_cache = {}
+    for node in tqdm(G.nodes(), desc="Caching aggregated embeddings"):
+        node_str = str(node)
+        idx = node2idx[node_str]
+        Cu = node_emb[idx]
+        neighbors = list(G.neighbors(node))
+        if neighbors:
+            CNu = [node_emb[node2idx[str(n)]] for n in neighbors]
+            agg = (Cu + sum(CNu)) / (1 + len(CNu))
+        else:
+            agg = Cu
+        agg_cache[node_str] = agg
+
+    # Get all edges (with data) from the graph
+    edges = list(G.edges(data=True))
+    num_edges = len(edges)
+    if num_edges == 0:
+        return []
+
+    # Determine embedding dimension from node_emb
+    dim = node_emb.shape[1]
+
+    # Preallocate arrays for aggregated embeddings and index arrays
+    agg_u = np.empty((num_edges, dim), dtype=node_emb.dtype)
+    agg_v = np.empty((num_edges, dim), dtype=node_emb.dtype)
+    u_idx_arr = np.empty(num_edges, dtype=np.int64)
+    v_idx_arr = np.empty(num_edges, dtype=np.int64)
+
+    # Also collect additional edge data for later use
+    snapshots = []
+    times = []
+    labels = []
+    us = []
+    vs = []
+
+    # Build arrays for all edges with progress printing
+    for i, (u, v, data) in enumerate(tqdm(edges, desc="Building edge arrays")):
+        u_str = str(u)
+        v_str = str(v)
+        agg_u[i, :] = agg_cache[u_str]
+        agg_v[i, :] = agg_cache[v_str]
+        u_idx_arr[i] = node2idx[u_str]
+        v_idx_arr[i] = node2idx[v_str]
+        snapshots.append(data['snapshot'])
+        times.append(data['time'])
+        labels.append(data['anom'])
+        us.append(u)
+        vs.append(v)
+
+    # Compute prediction probabilities in batch using the dot product and softmax.
+    P_source = softmax(np.dot(agg_u, w.T), axis=1)
+    P_target = softmax(np.dot(agg_v, w.T), axis=1)
+
+    # Compute the edge score for each edge.
+    scores = ((1 - P_source[np.arange(num_edges), v_idx_arr]) +
+              (1 - P_target[np.arange(num_edges), u_idx_arr])) / 2
+
+    # Build and return the list of edge scores with progress printing
+    edge_scores = []
+    for i in tqdm(range(num_edges), desc="Building final edge score list"):
+        edge_scores.append([us[i], vs[i], scores[i], snapshots[i], times[i], labels[i]])
     return edge_scores
 
 class AnomalyDetection:
@@ -61,10 +118,14 @@ class AnomalyDetection:
         return None
 
     def aggregate_neighbors_object(self, u, n_u):
-        CNu = [self.node_embeddings[self.idx][self.node_list.index(str(n))] for n in n_u]
-        Cu = self.node_embeddings[self.idx][self.node_list.index(str(u))]
-        H = 1/(1+len(CNu))*np.add(Cu, sum(Cn for Cn in CNu))
-        return np.array(H)
+        node_index_u = self.node_list.index(str(u))
+        # Get the embedding for node u at time self.idx
+        Cu = self.node_embeddings[node_index_u, self.idx, :]
+        # Get embeddings for neighbor nodes at time self.idx
+        CNu = [self.node_embeddings[self.node_list.index(str(n)), self.idx, :] for n in n_u]
+        # Compute the aggregate (here simply the average of u and its neighbors)
+        H = 1 / (1 + len(CNu)) * (Cu + sum(CNu))
+        return H
 
     def initialize_parameters(self, k, v):
         w = np.random.randn(v, k) * 0.0001
@@ -189,10 +250,11 @@ class AnomalyDetection:
                 with open(prob_param_file, 'rb') as f:
                     param = pickle.load(f)
                 w = param['w']
-                total_cpu = 8 # os.cpu_count()
+                total_cpu = os.cpu_count()
                 print("\nNumber of CPU Available: ", total_cpu)
 
-                graph_tuple = [(w, self.node_embeddings[self.args.trainwin + idx], self.node_list, G) for idx, G in enumerate(graphs[self.args.trainwin:])]
+                graph_tuple = [(w, self.node_embeddings[:, self.args.trainwin + idx, :], self.node_list, G)
+                               for idx, G in enumerate(graphs[self.args.trainwin:])]
                 s_time = timer()
                 with Pool(total_cpu) as pool:
                     all_graph_edges = pool.starmap(calculate_edge_probability, graph_tuple)
