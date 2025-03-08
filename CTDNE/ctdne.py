@@ -177,22 +177,18 @@ class CTDNE:
     def fit(self, **skip_gram_params):
         """
         Creates the embeddings using gensim's Word2Vec.
-        :param skip_gram_params: Parameteres for gensim.models.Word2Vec - do not supply 'size' it is taken from the Node2Vec 'dimensions' parameter
+        :param skip_gram_params: Parameters for gensim.models.Word2Vec - do not supply 'size'; it is taken from the Node2Vec 'dimensions' parameter
         :type skip_gram_params: dict
-        :return: A gensim word2vec model
+        :return: A gensim Word2Vec model
         """
 
         if 'workers' not in skip_gram_params:
             skip_gram_params['workers'] = self.workers
 
-        if 'size' not in skip_gram_params:
-            skip_gram_params['size'] = self.dimensions
+        # If 'size' is provided, convert it to 'vector_size'
+        if 'size' in skip_gram_params:
+            skip_gram_params['vector_size'] = skip_gram_params.pop('size')
+        else:
+            skip_gram_params['vector_size'] = self.dimensions
 
-        # print("\n\n ++++++++++++ \n\n")
-        # print("Walks: ", len(self.walks))
-
-        # for w in self.walks:
-        #     print("\n ", w)
-        # print("\n\n ++++++++++++ \n\n")
-        # print("Nodes: ", len(self.walks), len(self.walks[0]), len(self.graph.nodes()), self.graph.nodes())
         return gensim.models.Word2Vec(self.walks, **skip_gram_params)

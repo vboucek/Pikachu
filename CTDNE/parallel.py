@@ -68,7 +68,7 @@ def parallel_generate_walks(d_graph, global_walk_length, num_walks, cpu_num, sam
                     last_time = min(map(lambda x: x[2], walk_options))
 
                 if use_linear:
-                    time_probabilities = np.array(np.argsort(np.argsort(list(map(lambda x: x[2], walk_options)))[::-1])+1, dtype=np.float)
+                    time_probabilities = np.array(np.argsort(np.argsort(list(map(lambda x: x[2], walk_options)))[::-1])+1, dtype=float)
                     final_probabilities = time_probabilities*np.array(list(map(lambda x: x[1], walk_options)))
                     final_probabilities /= sum(final_probabilities)
                 else:
