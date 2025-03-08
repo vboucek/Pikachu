@@ -5,6 +5,8 @@
 # ========  =========  ========================================================
 # 3/8/21   Paudel     Initial version,
 # ******************************************************************************
+import os
+
 from CTDNE.ctdne import CTDNE
 # from walk_utils import WalkUtil
 from gensim.models import Word2Vec
@@ -30,12 +32,12 @@ def short_term_embedding(args, node_list, idx, G):
     ctdne_model = CTDNE_model.fit(window=10, min_count=1,
                                   batch_words=4)
     # convert the wv word vectors into a numpy matrix
-    node_embs = np.zeros((len(node_list), args.dimensions), dtype=np.float32)
-    for i in range(len(ctdne_model.wv.vocab)):
-        if ctdne_model.wv.index2word[i] in node_list:
-            node_vec = ctdne_model.wv[ctdne_model.wv.index2word[i]]
+    node_embs = np.zeros((len(node_list), args.dimensions), dtype=float)
+    for word in ctdne_model.wv.index_to_key:
+        if word in node_list:
+            node_vec = ctdne_model.wv[word]
             if node_vec is not None:
-                node_embs[node_list.index(ctdne_model.wv.index2word[i])] = np.array(node_vec)
+                node_embs[node_list.index(word)] = np.array(node_vec)
     return node_embs
 
 class PIKACHU:
@@ -117,7 +119,7 @@ class PIKACHU:
     def learn_embedding(self, save_file):
         # '''
         print("\nGenerating Short Term embedding...")
-        total_cpu = 4  # os.cpu_count()
+        total_cpu = os.cpu_count()
         print("\nNumber of CPU Available: ", total_cpu)
         data_tuple = [(self.args, self.node_list, idx, G) for idx, G in enumerate(self.graphs)]
         s_time = timer()
