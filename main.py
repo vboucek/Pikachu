@@ -16,6 +16,7 @@ import pickle
 import numpy as np
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 
@@ -29,55 +30,61 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+
 def parse_args():
     '''
     Usual pythonic way of parsing command line arguments
     :return: all command line arguments read
     '''
     args = argparse.ArgumentParser("walk")
-    args.add_argument('-k', "--dimensions", default = 64, type=int, help="Number of Dimension")
-    args.add_argument('-ip', '--input', default = 'dataset/optc/sample.csv', help='Dataset filename')
-    args.add_argument('-l', '--walklen', default = 500, type=int, help='Walk length')
-    args.add_argument('-n', '--numwalk', default = 1, type=int, help='Walk length')
-    args.add_argument('-w', '--trainwin', type=int, default = 5,
-                        help='Context size for optimization. Default is 2.')
-    args.add_argument('-e', '--epoch', default= 50, type=int,
-                        help='Number of epochs (for GRU)')
+    args.add_argument('-k', "--dimensions", default=100, type=int, help="Number of Dimension")
+    args.add_argument('-ip', '--input', default='dataset/optc/sample.csv', help='Dataset filename')
+    args.add_argument('-l', '--walklen', default=500, type=int, help='Walk length')
+    args.add_argument('-n', '--numwalk', default=1, type=int, help='Walk length')
+    args.add_argument('-w', '--trainwin', type=int, default=5,
+                      help='Context size for optimization. Default is 2.')
+    args.add_argument('-e', '--epoch', default=50, type=int,
+                      help='Number of epochs (for GRU)')
     args.add_argument('-i', '--iter', default=10, type=int,
                       help='Number of iteration (for edge probability estimation)')
     args.add_argument('-r', '--alpha', default=0.001, type=float,
                       help='Learning rate for edge probability estimation')
     args.add_argument('-s', '--support', default=10, type=int,
                       help='Support Set (# of neighbor for edge probability estimation)')
-    args.add_argument('-t', '--train', nargs='?', const=True, default = True, type=str2bool,
+    args.add_argument('-t', '--train', nargs='?', const=True, default=True, type=str2bool,
                       help='Is training?')
     # args.add_argument('-o', '--output', type=str, default='results/anomalous_edges.csv',
-                        # help='Output file for anomalous edges')
+    # help='Output file for anomalous edges')
     args.add_argument('-d', '--dataset', type=str, default='optc',
-                      help='Name of the dataset')
+                      help='Name of the dataset', choices=["optc", "lanl", "pivoting"])
     return args.parse_args()
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     args = parse_args()
 
-    file = "sample"
+    if args.dataset == "lanl":
+        file = "lanl_anom_full_20xuser_1hr"
+    elif args.dataset == "pivoting":
+        file = "pivoting_anom_full_100xuser_1hr"
+    else:
+        file = "optc_anom_full_20xuser_1hr"
+
     data_file = '_' + args.dataset + '_' + file + '.pickle'
 
     if args.train:
         print("... Parsing Data ... \n")
         dp = DataUtils(data_folder=args.input)
-        # data_df = dp.get_data()
         data_df, node_map = dp.get_data()
         with open('weights/node_map' + data_file, 'wb') as f:
-           pickle.dump(node_map, f)
+            pickle.dump(node_map, f)
         print("... Generating Graphs ... \n")
         g_util = GraphUtils(node_map)
         graphs = []
         for t in tqdm(data_df.snapshot.unique()):
             graphs.append(g_util.create_graph(data_df[data_df['snapshot'] == t]))
         with open('weights/graphs' + data_file, 'wb') as f:
-           pickle.dump(graphs, f)
+            pickle.dump(graphs, f)
 
     # '''
     with open('weights/node_map' + data_file, 'rb') as f:
@@ -106,7 +113,7 @@ if __name__=="__main__":
         long_term_embs = pickle.load(f)
     long_term_embs = np.transpose(long_term_embs, (1, 0, 2))
 
-    ad_long_term = AnomalyDetection(args, node_list, node_map, long_term_embs, idx = 0)
+    ad_long_term = AnomalyDetection(args, node_list, node_map, long_term_embs, idx=0)
     param_file_name = '_' + args.dataset + '_' + file + '_d' + str(args.dimensions)
     ad_long_term.anomaly_detection(graphs, param_file='weights/param' + param_file_name)
     del ad_long_term

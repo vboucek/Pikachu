@@ -119,7 +119,7 @@ def lanl_user_subset(input_csv, output_csv, chunksize=10000):
         users = set(chunk['src_user'].unique()) | set(chunk['dst_user'].unique())
         all_users.update(users)
         anom_chunk = chunk[chunk['label'] == True]
-        a_users = set(anom_chunk['src_user'].unique()) | set(anom_chunk['dst_user'].unique())
+        a_users = set(anom_chunk['src_user'].unique())
         anom_users.update(a_users)
     print("Total users in dataset:", len(all_users))
     print("Anomalous users found:", len(anom_users))
@@ -142,7 +142,7 @@ def lanl_user_subset(input_csv, output_csv, chunksize=10000):
                       desc="Filtering downsampled data"):
         chunk['src_user'] = chunk['src_user'].astype(str)
         chunk['dst_user'] = chunk['dst_user'].astype(str)
-        filtered = chunk[chunk['src_user'].isin(selected_users) | chunk['dst_user'].isin(selected_users)]
+        filtered = chunk[chunk['src_user'].isin(selected_users)]
         filtered.to_csv(output_csv, mode='a', index=False, header=first_chunk)
         first_chunk = False
     print(f"Downsampled data saved to {output_csv}")
@@ -154,9 +154,9 @@ if __name__ == "__main__":
     redteam_file = "redteam.txt"
 
     processed_csv = "auth_all_anom_1hr.csv"
-    downsampled_csv = "anom_full_20xuser_1hr.csv"
+    downsampled_csv = "lanl_anom_full_20xuser_1hr2.csv"
 
     preprocess_lanl_data(auth_file, redteam_file, processed_csv, chunksize=10000)
 
-    # Downsample the processed data using a 1:20 ratio, considering both src_user and dst_user.
+    # Downsample the processed data using a 1:20 ratio
     lanl_user_subset(processed_csv, downsampled_csv, chunksize=10000)
