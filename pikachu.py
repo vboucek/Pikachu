@@ -24,6 +24,7 @@ import numpy as np
 import pickle
 from timeit import default_timer as timer
 
+
 def short_term_embedding(args, node_list, idx, G):
     # Any keywords acceptable by gensim.Word2Vec can be passed, `dimensions` and `workers` are automatically passed (from the CTDNE constructor)
     CTDNE_model = CTDNE(G, dimensions=args.dimensions, workers=4, walk_length=args.walklen,
@@ -40,6 +41,7 @@ def short_term_embedding(args, node_list, idx, G):
                 node_embs[node_list.index(word)] = np.array(node_vec)
     return node_embs
 
+
 class PIKACHU:
     def __init__(self, args, node_list, node_map, graphs):
         self.args = args
@@ -50,6 +52,7 @@ class PIKACHU:
         # self.batch_size = len(self.graphs) - self.args.lookback + 1
         # self.batch_size = 100
         self.model, self.encoder = None, None
+
     '''
     Initial layer is input and the masking for non-present timestep
     First couple of GRU layers create the compressed representation of the input data, the encoder.
@@ -132,7 +135,7 @@ class PIKACHU:
             pickle.dump(short_term_embs, f)
         gc.collect()
 
-        with open('weights/short_term' + save_file , 'rb') as f:
+        with open('weights/short_term' + save_file, 'rb') as f:
             short_term_embs = pickle.load(f)
         print("\n\nStarting Long Term Embedding...")
         # transpose to make node sequences over time e.g. (node, time, dimension)
@@ -141,6 +144,6 @@ class PIKACHU:
         s_time = timer()
         dynamic_embs = self.long_term_embedding(short_term_embs)
         print("\nLong Term Embedding Completed...   [%s Sec.]" % (timer() - s_time))
-        with open('weights/long_term' + save_file , 'wb') as f:
+        with open('weights/long_term' + save_file, 'wb') as f:
             pickle.dump(dynamic_embs, f)
         gc.collect()

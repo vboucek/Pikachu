@@ -4,7 +4,6 @@
 # Date      Name       Description
 # ========  =========  ========================================================
 # 6/11/21   Paudel     Initial version
-# 3/09/25   Modified to process graphs in chunks to reduce memory usage
 # ******************************************************************************
 
 import os

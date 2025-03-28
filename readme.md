@@ -1,3 +1,18 @@
+## README Update:
+This is updated PIKACHU repository used for testing.
+To preprocess the data, go to dataset folder and use the relevant scripts. Preprocessed data can be passed to the main.py: 
+
+To train the model:
+
+```bash
+python main.py --dataset pivoting --train True --input "./dataset/pivoting/pivoting_downsampled_09_1h.csv"
+```
+
+To only test the model using already trained embeddings:
+```bash
+python main.py --train False --dataset "pivoting"
+```
+
 PIKACHU
 ============
 

@@ -21,8 +21,8 @@ def preprocess_optc_data(input_file, output_file, chunksize=10000):
 
     The output CSV will contain:
       - timestamp       (original timestamp, as a string)
-      - src_ip          (source IP)
-      - dest_ip         (destination IP)
+      - src_computer    (source IP, renamed from src_ip)
+      - dst_computer    (destination IP, renamed from dest_ip)
       - orig_index      (an incremental row index)
       - label           (anomaly label)
       - snapshot        (1-hour snapshot, computed as the number of complete hours
@@ -75,8 +75,11 @@ def preprocess_optc_data(input_file, output_file, chunksize=10000):
         # Both timestamp_dt and initial_time are now tz-aware in UTC.
         chunk['snapshot'] = ((chunk['timestamp_dt'] - initial_time).dt.total_seconds() // 3600).astype(int)
 
-        # Keep only the desired columns: timestamp, src_ip, dest_ip, orig_index, label, snapshot.
-        chunk = chunk[['timestamp', 'src_ip', 'dest_ip', 'orig_index', 'label', 'snapshot']].copy()
+        # Rename columns: src_ip -> src_computer, dest_ip -> dst_computer
+        chunk = chunk.rename(columns={'src_ip': 'src_computer', 'dest_ip': 'dst_computer'})
+
+        # Keep only the desired columns: timestamp, src_computer, dst_computer, orig_index, label, snapshot.
+        chunk = chunk[['timestamp', 'src_computer', 'dst_computer', 'orig_index', 'label', 'snapshot']].copy()
 
         # Append the processed chunk to the output CSV.
         chunk.to_csv(output_file, mode='a', index=False, header=write_header)
@@ -91,25 +94,25 @@ def optc_host_subset(input_csv, output_csv, chunksize=10000, ratio=20):
     of anomalous hosts.
 
     Process:
-      1. First pass: Collect unique hosts from both 'src_ip' and 'dest_ip'
+      1. First pass: Collect unique hosts from both 'src_computer' and 'dst_computer'
          and determine anomalous hosts (rows where label == 1).
       2. Sample normal hosts (all hosts not anomalous) at a 1:ratio ratio relative to anomalous hosts.
-      3. Second pass: Write out only rows where either src_ip or dest_ip is in the selected host set.
+      3. Second pass: Write out only rows where either src_computer or dst_computer is in the selected host set.
     """
-    PROCESSED_COLS = ['timestamp', 'src_ip', 'dest_ip', 'orig_index', 'label', 'snapshot']
+    PROCESSED_COLS = ['timestamp', 'src_computer', 'dst_computer', 'orig_index', 'label', 'snapshot']
     all_hosts = set()
     anom_hosts = set()
 
     # Pass 1: Collect unique hosts and anomalous hosts
     for chunk in tqdm(pd.read_csv(input_csv, chunksize=chunksize, names=PROCESSED_COLS, header=0),
                       desc="Collecting unique hosts from optc"):
-        chunk['src_ip'] = chunk['src_ip'].astype(str)
-        chunk['dest_ip'] = chunk['dest_ip'].astype(str)
-        hosts = set(chunk['src_ip'].unique()) | set(chunk['dest_ip'].unique())
+        chunk['src_computer'] = chunk['src_computer'].astype(str)
+        chunk['dst_computer'] = chunk['dst_computer'].astype(str)
+        hosts = set(chunk['src_computer'].unique()) | set(chunk['dst_computer'].unique())
         all_hosts.update(hosts)
         # Rows with label==1 are considered anomalous.
         anom_chunk = chunk[chunk['label'] == 1]
-        a_hosts = set(anom_chunk['src_ip'].unique())
+        a_hosts = set(anom_chunk['src_computer'].unique())
         anom_hosts.update(a_hosts)
 
     print("Total hosts in optc dataset:", len(all_hosts))
@@ -125,15 +128,17 @@ def optc_host_subset(input_csv, output_csv, chunksize=10000, ratio=20):
     selected_hosts = set(sample_normal) | anom_hosts
     print("Total hosts after rebalancing:", len(selected_hosts))
 
-    # Pass 2: Filter rows where either src_ip or dest_ip is in the selected host set.
+    # Pass 2: Filter rows where either src_computer or dst_computer is in the selected host set.
     if os.path.exists(output_csv):
         os.remove(output_csv)
     first_chunk_flag = True
     for chunk in tqdm(pd.read_csv(input_csv, chunksize=chunksize, names=PROCESSED_COLS, header=0),
                       desc="Filtering downsampled optc data"):
-        chunk['src_ip'] = chunk['src_ip'].astype(str)
-        chunk['dest_ip'] = chunk['dest_ip'].astype(str)
-        filtered = chunk[(chunk['src_ip'].isin(selected_hosts))]
+        chunk['src_computer'] = chunk['src_computer'].astype(str)
+        chunk['dst_computer'] = chunk['dst_computer'].astype(str)
+        filtered = chunk[
+            (chunk['src_computer'].isin(selected_hosts)) | (chunk['dst_computer'].isin(selected_hosts))
+        ]
         filtered.to_csv(output_csv, mode='a', index=False, header=first_chunk_flag)
         first_chunk_flag = False
 

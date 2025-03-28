@@ -12,8 +12,8 @@ def preprocess_pivoting_data(input_file, output_file, chunksize=10000):
 
     The output CSV will contain:
       - timestamp       (original timestamp)
-      - src_computer    (renamed from p_src)
-      - dst_computer    (renamed from p_dst)
+      - src_computer    (renamed from src)
+      - dst_computer    (renamed from dst)
       - orig_index      (an incremental row index)
       - label           (from is_pivoting)
       - snapshot        (1-hour snapshot, computed as (timestamp - initial_time)//3600)
@@ -51,9 +51,9 @@ def preprocess_pivoting_data(input_file, output_file, chunksize=10000):
         orig_idx += len(chunk)
 
         # Rename columns:
-        # p_src -> src_computer, p_dst -> dst_computer, is_pivoting -> label
-        chunk.rename(columns={'p_src': 'src_computer',
-                              'p_dst': 'dst_computer',
+        # src -> src_computer, dst -> dst_computer, is_pivoting -> label
+        chunk.rename(columns={'src': 'src_computer',
+                              'dst': 'dst_computer',
                               'is_pivoting': 'label'}, inplace=True)
 
         # Keep only the desired columns
@@ -83,69 +83,43 @@ def preprocess_pivoting_data(input_file, output_file, chunksize=10000):
     print(f"Processed data saved to {output_file}")
 
 
-def pivoting_host_subset(input_csv, output_csv, chunksize=10000):
-    """
-    Downsample (rebalance) the processed pivoting dataset so that the number of benign hosts
-    (those that never appear in an anomalous row) is limited to 20× the number of malicious hosts.
-
-    Process:
-      1. First pass: Collect unique hosts from both 'src_computer' and 'dst_computer'
-         and determine anomalous hosts (those that appear in rows with label==1).
-      2. Sample normal hosts (all hosts not anomalous) at a 1:20 ratio relative to anomalous hosts.
-      3. Second pass: Write out only rows where either src_computer or dst_computer is in the selected host set.
-    """
+def filter_pivoting_data(input_csv, output_csv, chunksize=10000, drop_ratio=0.9, filter_host="559"):
     PROCESSED_COLS = ['timestamp', 'src_computer', 'dst_computer', 'orig_index', 'label', 'snapshot']
-    all_hosts = set()
-    anom_hosts = set()
 
-    # Pass 1: Collect unique hosts and anomalous hosts
-    for chunk in tqdm(pd.read_csv(input_csv, header=0, names=PROCESSED_COLS, chunksize=chunksize),
-                      desc="Collecting unique hosts"):
-        # Ensure the host columns are strings
-        chunk['src_computer'] = chunk['src_computer'].astype(str)
-        chunk['dst_computer'] = chunk['dst_computer'].astype(str)
-        hosts = set(chunk['src_computer'].unique()) | set(chunk['dst_computer'].unique())
-        all_hosts.update(hosts)
-        # Consider a row anomalous if label==1
-        anom_chunk = chunk[chunk['label'] == 1]
-        a_hosts = set(anom_chunk['src_computer'].unique())
-        anom_hosts.update(a_hosts)
-
-    print("Total hosts in dataset:", len(all_hosts))
-    print("Anomalous hosts found:", len(anom_hosts))
-
-    # Normal hosts are those not in the anomalous set.
-    normal_hosts = list(all_hosts - anom_hosts)
-    # Sample 20 times as many normal hosts as there are anomalous hosts.
-    if len(anom_hosts) * 20 > len(normal_hosts):
-        sample_normal = normal_hosts
-    else:
-        sample_normal = random.sample(normal_hosts, len(anom_hosts) * 20)
-    selected_hosts = set(sample_normal) | anom_hosts
-    print("Total hosts after rebalancing:", len(selected_hosts))
-
-    # Pass 2: Filter rows where either src_computer or dst_computer is in the selected host set.
     if os.path.exists(output_csv):
         os.remove(output_csv)
     first_chunk = True
+
     for chunk in tqdm(pd.read_csv(input_csv, header=0, names=PROCESSED_COLS, chunksize=chunksize),
-                      desc="Filtering downsampled data"):
+                      desc="Filtering dataset"):
         chunk['src_computer'] = chunk['src_computer'].astype(str)
         chunk['dst_computer'] = chunk['dst_computer'].astype(str)
-        filtered = chunk[chunk['src_computer'].isin(selected_hosts)]
-        filtered.to_csv(output_csv, mode='a', index=False, header=first_chunk)
+
+        # Separate rows where src_computer == filter_host and label == 0
+        filter_mask = (chunk['src_computer'] == filter_host) & (chunk['label'] == 0)
+        to_filter = chunk[filter_mask]
+        keep_rows = chunk[~filter_mask]
+
+        # Randomly select a subset to keep from the filtered rows
+        if not to_filter.empty:
+            keep_sample = to_filter.sample(frac=(1 - drop_ratio), random_state=42)
+            filtered_chunk = pd.concat([keep_rows, keep_sample])
+        else:
+            filtered_chunk = keep_rows
+
+        filtered_chunk.to_csv(output_csv, mode='a', index=False, header=first_chunk)
         first_chunk = False
 
-    print(f"Downsampled data saved to {output_csv}")
+    print(f"Filtered data saved to {output_csv}")
 
 
 if __name__ == "__main__":
     # File paths (update as necessary)
     input_file = "dataset_pivoting.csv"               # Original pivoting dataset file
     processed_file = "processed_pivoting.csv"   # Intermediate processed file
-    downsampled_file = "pivoting_anom_full_100xuser_1hr.csv"  # Final output after rebalancing
+    downsampled_file = "pivoting_downsampled_09_1h.csv"  # Final output after rebalancing
 
     # First, process the raw pivoting file into the desired format.
-    preprocess_pivoting_data(input_file, processed_file, chunksize=10000)
-    # Then, perform host-based downsampling to rebalance benign vs. malicious hosts (20:1 ratio).
-    pivoting_host_subset(processed_file, downsampled_file, chunksize=10000)
+    #preprocess_pivoting_data(input_file, processed_file, chunksize=10000)
+    # Most benign flows are from the host 559, balance the data a little by removing most of the traffic from this host
+    filter_pivoting_data(processed_file, downsampled_file, chunksize=10000, drop_ratio=0.9, filter_host="559")

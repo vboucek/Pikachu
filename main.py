@@ -42,7 +42,7 @@ def parse_args():
     args.add_argument('-l', '--walklen', default=500, type=int, help='Walk length')
     args.add_argument('-n', '--numwalk', default=1, type=int, help='Walk length')
     args.add_argument('-w', '--trainwin', type=int, default=5,
-                      help='Context size for optimization. Default is 2.')
+                      help='Context size for optimization. Default is 5.')
     args.add_argument('-e', '--epoch', default=50, type=int,
                       help='Number of epochs (for GRU)')
     args.add_argument('-i', '--iter', default=10, type=int,
@@ -55,7 +55,7 @@ def parse_args():
                       help='Is training?')
     # args.add_argument('-o', '--output', type=str, default='results/anomalous_edges.csv',
     # help='Output file for anomalous edges')
-    args.add_argument('-d', '--dataset', type=str, default='optc',
+    args.add_argument('-d', '--dataset', type=str, required=True,
                       help='Name of the dataset', choices=["optc", "lanl", "pivoting"])
     return args.parse_args()
 
@@ -63,14 +63,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    if args.dataset == "lanl":
-        file = "lanl_anom_full_20xuser_1hr"
-    elif args.dataset == "pivoting":
-        file = "pivoting_anom_full_100xuser_1hr"
-    else:
-        file = "optc_anom_full_20xuser_1hr"
-
-    data_file = '_' + args.dataset + '_' + file + '.pickle'
+    data_file = '_' + args.dataset + '.pickle'
 
     if args.train:
         print("... Parsing Data ... \n")
@@ -100,7 +93,7 @@ if __name__ == "__main__":
 
     print("... Starting Graph Embedding ... \n")
 
-    weight_file = '_' + args.dataset + '_' + file + '_d' + str(args.dimensions) + '.pickle'
+    weight_file = '_' + args.dataset + '_d' + str(args.dimensions) + '.pickle'
     print(" \n********** PARAM **********\n", args)
     print("Weight Files: ", weight_file)
     print("********************\n")
@@ -114,6 +107,6 @@ if __name__ == "__main__":
     long_term_embs = np.transpose(long_term_embs, (1, 0, 2))
 
     ad_long_term = AnomalyDetection(args, node_list, node_map, long_term_embs, idx=0)
-    param_file_name = '_' + args.dataset + '_' + file + '_d' + str(args.dimensions)
+    param_file_name = '_' + args.dataset + '_d' + str(args.dimensions)
     ad_long_term.anomaly_detection(graphs, param_file='weights/param' + param_file_name)
     del ad_long_term
